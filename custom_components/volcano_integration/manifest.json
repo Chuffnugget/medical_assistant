@@ -1,0 +1,13 @@
+{
+  "domain": "medical_assistant",
+  "name": "Medical Assistant",
+  "version": "1.0.0",
+  "documentation": "https://github.com/Chuffnugget/medical_assistant",
+  "issue_tracker": "https://github.com/Chuffnugget/medical_assistant/issues",
+  "dependencies": [],
+  "codeowners": ["@Chuffnugget"],
+  "iot_class": "local_push",
+  "config_flow": true,
+  "supports_entry_removal": true,
+  "requirements": []
+}
