@@ -1,7 +1,7 @@
 {
   "domain": "medical_assistant",
   "name": "Medical Assistant",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "documentation": "https://github.com/Chuffnugget/medical_assistant",
   "issue_tracker": "https://github.com/Chuffnugget/medical_assistant/issues",
   "dependencies": [],
