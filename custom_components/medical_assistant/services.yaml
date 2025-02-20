@@ -4,15 +4,31 @@ add_medication:
     day:
       description: "Day of the week (Monday, Tuesday, etc.)"
       example: "Monday"
+      selector:
+        select:
+          options:
+            - Monday
+            - Tuesday
+            - Wednesday
+            - Thursday
+            - Friday
+            - Saturday
+            - Sunday
     medication_name:
       description: "Name of the medication."
       example: "Aspirin"
+      selector:
+        text: {}
     strength:
       description: "Strength or dosage of the medication."
       example: "100mg"
+      selector:
+        text: {}
     time:
       description: "Time to take the medication in HH:MM:SS format."
       example: "08:00:00"
+      selector:
+        text: {}
 
 remove_medication:
   description: "Remove a medication from the schedule by index."
@@ -20,9 +36,22 @@ remove_medication:
     day:
       description: "Day of the week (Monday, Tuesday, etc.)"
       example: "Monday"
+      selector:
+        select:
+          options:
+            - Monday
+            - Tuesday
+            - Wednesday
+            - Thursday
+            - Friday
+            - Saturday
+            - Sunday
     index:
       description: "Index (0-based) of the medication to remove."
       example: 0
+      selector:
+        number:
+          min: 0
 
 update_medication:
   description: "Update an existing medication entry in the schedule."
@@ -30,15 +59,34 @@ update_medication:
     day:
       description: "Day of the week (Monday, Tuesday, etc.)"
       example: "Monday"
+      selector:
+        select:
+          options:
+            - Monday
+            - Tuesday
+            - Wednesday
+            - Thursday
+            - Friday
+            - Saturday
+            - Sunday
     index:
       description: "Index (0-based) of the medication to update."
       example: 0
+      selector:
+        number:
+          min: 0
     medication_name:
       description: "New name for the medication (optional)."
       example: "Ibuprofen"
+      selector:
+        text: {}
     strength:
       description: "New strength or dosage (optional)."
       example: "200mg"
+      selector:
+        text: {}
     time:
       description: "New time in HH:MM:SS format (optional)."
       example: "09:00:00"
+      selector:
+        text: {}
