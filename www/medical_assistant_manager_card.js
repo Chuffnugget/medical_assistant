@@ -1,21 +1,20 @@
 class MedicalAssistantManagerCard extends HTMLElement {
   setConfig(config) {
+    // Optionally allow a default day via configuration; otherwise, default to today's weekday.
     this.config = config;
-    // Optionally allow a default day via configuration;
-    // otherwise, default to today's weekday.
     this._days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const today = new Date().toLocaleString("en-US", { weekday: "long" });
     this._selectedDay = config.default_day || today;
   }
 
   set hass(hass) {
+    if (!this.config) return;
     this._hass = hass;
     this.render();
   }
 
   render() {
     if (!this._hass) return;
-
     const day = this._selectedDay;
     // Each day sensor is expected to have an entity_id like sensor.medical_assistant_monday_schedule.
     const sensorId = `sensor.medical_assistant_${day.toLowerCase()}_schedule`;
