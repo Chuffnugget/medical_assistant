@@ -8,8 +8,9 @@ from .const import DOMAIN, DAYS_OF_WEEK
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up sensor entities for each day of the week and the next medication sensor."""
+    """Set up sensor entities for each day of the week, current day, and next medication sensor."""
     sensors = [MedicationScheduleSensor(day, hass) for day in DAYS_OF_WEEK]
+    sensors.append(CurrentDayMedicationSensor(hass))
     sensors.append(NextMedicationSensor(hass))
     async_add_entities(sensors, update_before_add=True)
 
@@ -37,6 +38,50 @@ class MedicationScheduleSensor(Entity):
     @property
     def extra_state_attributes(self):
         schedule = self._hass.data[DOMAIN]["schedule"].get(self._day, [])
+        return {"medications": schedule}
+
+    async def async_update(self):
+        pass
+
+    async def async_added_to_hass(self):
+        self._unsubscribe_dispatcher = async_dispatcher_connect(
+            self._hass, f"{DOMAIN}_update", self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self):
+        if self._unsubscribe_dispatcher:
+            self._unsubscribe_dispatcher()
+            self._unsubscribe_dispatcher = None
+
+    def _handle_update(self):
+        self.schedule_update_ha_state(True)
+
+class CurrentDayMedicationSensor(Entity):
+    """Sensor that always displays the medication schedule for the current day."""
+    def __init__(self, hass):
+        self._hass = hass
+        self._unsubscribe_dispatcher = None
+
+    @property
+    def name(self):
+        return "Medical Assistant Current Day Schedule"
+
+    @property
+    def unique_id(self):
+        return "medical_assistant_current_day_schedule"
+
+    @property
+    def state(self):
+        """Return the number of medications scheduled for the current day."""
+        current_day = datetime.now().strftime("%A")
+        schedule = self._hass.data[DOMAIN]["schedule"].get(current_day, [])
+        return len(schedule)
+
+    @property
+    def extra_state_attributes(self):
+        """Return the full medication list for the current day."""
+        current_day = datetime.now().strftime("%A")
+        schedule = self._hass.data[DOMAIN]["schedule"].get(current_day, [])
         return {"medications": schedule}
 
     async def async_update(self):
@@ -134,14 +179,13 @@ class NextMedicationSensor(Entity):
         now = datetime.now()
         current_day = now.strftime("%A")
         current_time = now.time()
-        # Check today's medications
+        # Check today's medications.
         meds_today = schedule.get(current_day, [])
         upcoming = []
         for med in meds_today:
             try:
                 med_time = datetime.strptime(med.get("time"), "%H:%M:%S").time()
                 if med_time > current_time:
-                    # Compute datetime for today's medication
                     med_dt = datetime.combine(now.date(), med_time)
                     upcoming.append((med_dt, med))
             except Exception as e:
@@ -149,20 +193,18 @@ class NextMedicationSensor(Entity):
         if upcoming:
             upcoming.sort(key=lambda x: x[0])
             return current_day, upcoming[0][1], upcoming[0][0]
-        # Check subsequent days
+        # Check subsequent days.
         current_index = DAYS_OF_WEEK.index(current_day)
         for i in range(1, len(DAYS_OF_WEEK)):
             day = DAYS_OF_WEEK[(current_index + i) % len(DAYS_OF_WEEK)]
             meds = schedule.get(day, [])
             if meds:
                 try:
-                    # Take the earliest medication in that day
-                    med_sorted = sorted(
+                    meds_sorted = sorted(
                         meds,
                         key=lambda m: datetime.strptime(m.get("time"), "%H:%M:%S").time()
                     )
-                    med = med_sorted[0]
-                    # Calculate the date for the upcoming day
+                    med = meds_sorted[0]
                     days_ahead = (DAYS_OF_WEEK.index(day) - current_index) % 7
                     med_date = now.date() + timedelta(days=days_ahead)
                     med_time = datetime.strptime(med.get("time"), "%H:%M:%S").time()
