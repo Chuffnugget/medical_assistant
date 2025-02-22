@@ -1,6 +1,6 @@
 """sensor.py - Sensor platform for Medical Assistant integration."""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import DOMAIN, DAYS_OF_WEEK
@@ -71,20 +71,36 @@ class NextMedicationSensor(Entity):
 
     @property
     def state(self):
-        """Compute and return the next medication as a formatted string."""
+        """Return a formatted string for the next medication.
+        
+        If the next medication is within 12 hours, show relative time (e.g. "30 minutes until Aspirin (100mg)").
+        Otherwise, show the exact scheduled time with the medication name.
+        """
         schedule = self._hass.data[DOMAIN]["schedule"]
-        next_day, next_med = self._get_next_medication(schedule)
-        if next_med:
-            med_time = next_med.get("time")
-            med_name = next_med.get("name")
-            med_strength = next_med.get("strength")
-            return f"{next_day} {med_time} {med_name} ({med_strength})"
+        next_day, next_med, med_dt = self._get_next_medication(schedule)
+        if next_med and med_dt:
+            now = datetime.now()
+            delta = med_dt - now
+            seconds = delta.total_seconds()
+            if seconds < 12 * 3600:
+                # Show relative time
+                minutes = int(seconds // 60)
+                hours = int(seconds // 3600)
+                if hours > 0:
+                    rel_time = f"{hours} hour{'s' if hours != 1 else ''}"
+                else:
+                    rel_time = f"{minutes} minute{'s' if minutes != 1 else ''}"
+                return f"{rel_time} until {next_med.get('name')} ({next_med.get('strength')})"
+            else:
+                # Show timestamp and medication info
+                time_str = med_dt.strftime("%H:%M")
+                return f"{next_day} {time_str} - {next_med.get('name')} ({next_med.get('strength')})"
         return "No medication scheduled"
 
     @property
     def extra_state_attributes(self):
         schedule = self._hass.data[DOMAIN]["schedule"]
-        next_day, next_med = self._get_next_medication(schedule)
+        next_day, next_med, med_dt = self._get_next_medication(schedule)
         if next_med:
             return {
                 "day": next_day,
@@ -111,40 +127,47 @@ class NextMedicationSensor(Entity):
         self.schedule_update_ha_state(True)
 
     def _get_next_medication(self, schedule):
-        """Determine the next medication based on current day/time.
+        """Determine the next medication based on the current day/time.
         
-        1. Check the current day for any medications with a time later than now.
-        2. If none found, check subsequent days in order.
-        3. Return a tuple (day, medication dict) or (None, None) if none found.
+        Returns a tuple (day, medication dict, medication_datetime) or (None, None, None).
         """
         now = datetime.now()
         current_day = now.strftime("%A")
         current_time = now.time()
-        # First, check today's medications.
+        # Check today's medications
         meds_today = schedule.get(current_day, [])
         upcoming = []
         for med in meds_today:
             try:
                 med_time = datetime.strptime(med.get("time"), "%H:%M:%S").time()
                 if med_time > current_time:
-                    upcoming.append((med_time, med))
+                    # Compute datetime for today's medication
+                    med_dt = datetime.combine(now.date(), med_time)
+                    upcoming.append((med_dt, med))
             except Exception as e:
                 _LOGGER.error("Error parsing time for medication %s: %s", med, e)
         if upcoming:
             upcoming.sort(key=lambda x: x[0])
-            return current_day, upcoming[0][1]
-        # Check subsequent days.
+            return current_day, upcoming[0][1], upcoming[0][0]
+        # Check subsequent days
         current_index = DAYS_OF_WEEK.index(current_day)
         for i in range(1, len(DAYS_OF_WEEK)):
             day = DAYS_OF_WEEK[(current_index + i) % len(DAYS_OF_WEEK)]
             meds = schedule.get(day, [])
             if meds:
                 try:
-                    meds_sorted = sorted(
+                    # Take the earliest medication in that day
+                    med_sorted = sorted(
                         meds,
                         key=lambda m: datetime.strptime(m.get("time"), "%H:%M:%S").time()
                     )
-                    return day, meds_sorted[0]
+                    med = med_sorted[0]
+                    # Calculate the date for the upcoming day
+                    days_ahead = (DAYS_OF_WEEK.index(day) - current_index) % 7
+                    med_date = now.date() + timedelta(days=days_ahead)
+                    med_time = datetime.strptime(med.get("time"), "%H:%M:%S").time()
+                    med_dt = datetime.combine(med_date, med_time)
+                    return day, med, med_dt
                 except Exception as e:
                     _LOGGER.error("Error parsing time for day %s: %s", day, e)
-        return None, None
+        return None, None, None
