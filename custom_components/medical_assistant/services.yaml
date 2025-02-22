@@ -2,7 +2,7 @@ add_medication:
   description: "Add a medication to the schedule."
   fields:
     day:
-      description: "Day of the week (Monday, Tuesday, etc.)"
+      description: "Select the day of the week."
       example: "Monday"
       selector:
         select:
@@ -15,12 +15,12 @@ add_medication:
             - Saturday
             - Sunday
     medication_name:
-      description: "Name of the medication."
+      description: "Medication name."
       example: "Aspirin"
       selector:
         text: {}
     strength:
-      description: "Strength or dosage of the medication."
+      description: "Strength or dosage (e.g., 100mg)."
       example: "100mg"
       selector:
         text: {}
@@ -31,10 +31,10 @@ add_medication:
         text: {}
 
 remove_medication:
-  description: "Remove a medication from the schedule by index."
+  description: "Remove a medication from the schedule by its index."
   fields:
     day:
-      description: "Day of the week (Monday, Tuesday, etc.)"
+      description: "Select the day of the week."
       example: "Monday"
       selector:
         select:
@@ -57,7 +57,7 @@ update_medication:
   description: "Update an existing medication entry in the schedule."
   fields:
     day:
-      description: "Day of the week (Monday, Tuesday, etc.)"
+      description: "Select the day of the week."
       example: "Monday"
       selector:
         select:
@@ -76,17 +76,17 @@ update_medication:
         number:
           min: 0
     medication_name:
-      description: "New name for the medication (optional)."
+      description: "New medication name (leave blank to keep unchanged)."
       example: "Ibuprofen"
       selector:
         text: {}
     strength:
-      description: "New strength or dosage (optional)."
+      description: "New strength/dosage (leave blank to keep unchanged)."
       example: "200mg"
       selector:
         text: {}
     time:
-      description: "New time in HH:MM:SS format (optional)."
+      description: "New time in HH:MM:SS format (leave blank to keep unchanged)."
       example: "09:00:00"
       selector:
         text: {}
