@@ -13,66 +13,67 @@ async def async_setup(hass: HomeAssistant, config: dict):
     """Set up Medical Assistant via YAML (if any)."""
     hass.data.setdefault(DOMAIN, {})
     if "schedule" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["schedule"] = {day: [] for day in DAYS_OF_WEEK}
+        # Global schedule as a list of medication records.
+        hass.data[DOMAIN]["schedule"] = []
     return True
 
 async def add_medication(call: ServiceCall):
     """Service to add a medication to the schedule."""
-    day = call.data["day"]
+    # We still accept a day to know when the medication should occur.
     medication = {
+        "day": call.data["day"],
         "name": call.data["medication_name"],
         "strength": call.data["strength"],
         "time": call.data["time"]  # expected format HH:MM:SS
     }
-    _LOGGER.debug("Adding medication %s to %s", medication, day)
+    _LOGGER.debug("Adding medication %s", medication)
     hass = call.hass
-    hass.data[DOMAIN]["schedule"][day].append(medication)
+    hass.data[DOMAIN]["schedule"].append(medication)
     hass.helpers.dispatcher.async_dispatcher_send(f"{DOMAIN}_update")
 
 async def remove_medication(call: ServiceCall):
-    """Service to remove a medication from the schedule by index."""
-    day = call.data["day"]
+    """Service to remove a medication from the schedule by its index."""
     index = call.data["index"]
     hass = call.hass
     try:
-        removed = hass.data[DOMAIN]["schedule"][day].pop(index)
-        _LOGGER.debug("Removed medication %s from %s", removed, day)
+        removed = hass.data[DOMAIN]["schedule"].pop(index)
+        _LOGGER.debug("Removed medication %s", removed)
         hass.helpers.dispatcher.async_dispatcher_send(f"{DOMAIN}_update")
     except IndexError:
-        _LOGGER.error("Invalid index %d for day %s", index, day)
+        _LOGGER.error("Invalid index %d", index)
 
 async def update_medication(call: ServiceCall):
     """Service to update an existing medication entry in the schedule."""
-    day = call.data["day"]
     index = call.data["index"]
     hass = call.hass
-    schedule_day = hass.data[DOMAIN]["schedule"].get(day, [])
+    schedule = hass.data[DOMAIN]["schedule"]
     try:
-        current = schedule_day[index]
+        current = schedule[index]
         updated = {
-            "name": call.data.get("medication_name", current["name"]),
-            "strength": call.data.get("strength", current["strength"]),
-            "time": call.data.get("time", current["time"]),
+            "day": call.data.get("day", current.get("day")),
+            "name": call.data.get("medication_name", current.get("name")),
+            "strength": call.data.get("strength", current.get("strength")),
+            "time": call.data.get("time", current.get("time")),
         }
-        schedule_day[index] = updated
-        _LOGGER.debug("Updated medication at index %d for %s: %s", index, day, updated)
+        schedule[index] = updated
+        _LOGGER.debug("Updated medication at index %d: %s", index, updated)
         hass.helpers.dispatcher.async_dispatcher_send(f"{DOMAIN}_update")
     except IndexError:
-        _LOGGER.error("Invalid index %d for day %s", index, day)
+        _LOGGER.error("Invalid index %d", index)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Medical Assistant from a config entry."""
     _LOGGER.debug("Setting up Medical Assistant with entry: %s", entry.entry_id)
     hass.data.setdefault(DOMAIN, {})
     if "schedule" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["schedule"] = {day: [] for day in DAYS_OF_WEEK}
+        hass.data[DOMAIN]["schedule"] = []
 
     # Register services
     hass.services.async_register(DOMAIN, "add_medication", add_medication)
     hass.services.async_register(DOMAIN, "remove_medication", remove_medication)
     hass.services.async_register(DOMAIN, "update_medication", update_medication)
 
-    # Forward the sensor platform setup (awaiting the helper)
+    # Forward the sensor platform setup
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     return True
 
