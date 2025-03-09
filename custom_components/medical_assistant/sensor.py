@@ -102,6 +102,7 @@ class MedicationInputSelect(SelectEntity):
     Each option is a text string formatted as:
       "<YYYY-MM-DD HH:MM:SS> - <Medication Name> (<strength>)"
     ordered by the medication’s next occurrence.
+    If there are no medication records, the select will display a single option: "Empty".
     """
     def __init__(self, hass):
         self._hass = hass
@@ -137,11 +138,12 @@ class MedicationInputSelect(SelectEntity):
                 option_list.append((med_dt, option_str))
         # Order options by upcoming time.
         option_list.sort(key=lambda x: x[0])
-        self._options = [option for _, option in option_list]
-        if self._options:
+        if option_list:
+            self._options = [option for _, option in option_list]
             self._current_option = self._options[0]
         else:
-            self._current_option = "No medications scheduled"
+            self._options = ["Empty"]
+            self._current_option = "Empty"
 
     async def async_update(self):
         self._update_options()
