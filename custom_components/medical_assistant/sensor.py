@@ -1,10 +1,9 @@
 """sensor.py - Sensor platform for Medical Assistant integration."""
 import logging
 from datetime import datetime, timedelta
-
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.components.input_select import InputSelectEntity
+from homeassistant.components.select import SelectEntity
 
 from .const import DOMAIN, DAYS_OF_WEEK
 
@@ -97,9 +96,9 @@ class NextMedicationSensor(Entity):
     def _handle_update(self):
         self.schedule_update_ha_state(True)
 
-class MedicationInputSelect(InputSelectEntity):
+class MedicationInputSelect(SelectEntity):
     """
-    Input select entity that displays all medication records in the global schedule.
+    Select entity that displays all medication records in the global schedule.
     Each option is a text string formatted as:
       "<YYYY-MM-DD HH:MM:SS> - <Medication Name> (<strength>)"
     ordered by the medication’s next occurrence.
@@ -107,7 +106,7 @@ class MedicationInputSelect(InputSelectEntity):
     def __init__(self, hass):
         self._hass = hass
         self._options = []
-        self._selected_option = None
+        self._current_option = None
         self._unsubscribe_dispatcher = None
         self._update_options()
 
@@ -124,8 +123,8 @@ class MedicationInputSelect(InputSelectEntity):
         return self._options
 
     @property
-    def state(self):
-        return self._selected_option
+    def current_option(self):
+        return self._current_option
 
     def _update_options(self):
         now = datetime.now()
@@ -140,9 +139,9 @@ class MedicationInputSelect(InputSelectEntity):
         option_list.sort(key=lambda x: x[0])
         self._options = [option for _, option in option_list]
         if self._options:
-            self._selected_option = self._options[0]
+            self._current_option = self._options[0]
         else:
-            self._selected_option = "No medications scheduled"
+            self._current_option = "No medications scheduled"
 
     async def async_update(self):
         self._update_options()
@@ -161,7 +160,7 @@ class MedicationInputSelect(InputSelectEntity):
         self._update_options()
         self.schedule_update_ha_state(True)
 
-    def select_option(self, option: str) -> None:
+    async def async_select_option(self, option: str) -> None:
         if option in self._options:
-            self._selected_option = option
+            self._current_option = option
             self.schedule_update_ha_state()
