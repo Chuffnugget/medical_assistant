@@ -13,14 +13,11 @@ _LOGGER = logging.getLogger(__name__)
 
 def deploy_panel_file(hass: HomeAssistant) -> str:
     """Copy medication-panel.js from the integration folder to config/www.
-
+    
     Returns a status message.
     """
-    # Integration directory: custom_components/medical_assistant
     integration_dir = os.path.dirname(__file__)
-    # Source file: custom_components/medical_assistant/local/medication-panel.js
     src_path = os.path.join(integration_dir, "local", "medication-panel.js")
-    # Destination: config/www/medication-panel.js
     dst_path = hass.config.path("www", "medication-panel.js")
 
     if not os.path.exists(src_path):
@@ -47,7 +44,6 @@ class MedicalAssistantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             deploy_status = deploy_panel_file(self.hass)
-            # If the deploy_status indicates an error, show the form again with the error.
             if deploy_status.startswith("Error"):
                 errors["base"] = deploy_status
                 return self.async_show_form(
@@ -56,9 +52,7 @@ class MedicalAssistantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors=errors,
                     description_placeholders={"deploy_status": deploy_status},
                 )
-            # Otherwise, create the entry and pass the deploy status in the data.
             return self.async_create_entry(title="Medical Assistant", data={"deploy_status": deploy_status})
-        # When first showing the form, display a placeholder message.
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({}),
