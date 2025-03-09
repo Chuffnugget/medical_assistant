@@ -1,57 +1,57 @@
 import { LitElement, html, css } from 'lit';
 
 class MedicationPanel extends LitElement {
-  static get properties() {
-    return {
-      medications: { type: Array },
-      showAddForm: { type: Boolean },
-      editingMedication: { type: Object },
-      newMedication: { type: Object },
-    };
-  }
+  static properties = {
+    medications: { type: Array },
+    showAddForm: { type: Boolean },
+    editingMedication: { type: Object },
+    newMedication: { type: Object },
+  };
 
-  static get styles() {
-    return css`
-      h2, h3 {
-        margin: 0.5rem 0;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 1rem;
-      }
-      th, td {
-        border: 1px solid var(--primary-text-color);
-        padding: 8px;
-        text-align: left;
-      }
-      th {
-        background-color: var(--primary-background-color);
-      }
-      .button {
-        margin: 4px;
-        padding: 4px 8px;
-        cursor: pointer;
-        background-color: var(--primary-color);
-        color: var(--text-primary-color);
-        border: none;
-        border-radius: 4px;
-      }
-      .form-row {
-        margin: 0.5rem 0;
-      }
-      input {
-        padding: 4px;
-        margin-left: 0.5rem;
-      }
-      .form-container {
-        background-color: var(--secondary-background-color);
-        padding: 1rem;
-        border-radius: 4px;
-        margin-top: 1rem;
-      }
-    `;
-  }
+  static styles = css`
+    :host {
+      display: block;
+      padding: 16px;
+    }
+    h2, h3 {
+      margin: 0.5rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      border: 1px solid var(--primary-text-color, #333);
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: var(--primary-background-color, #ddd);
+    }
+    .button {
+      margin: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      background-color: var(--primary-color, #0080ff);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+    }
+    .form-container {
+      background-color: var(--secondary-background-color, #f0f0f0);
+      padding: 1rem;
+      border-radius: 4px;
+      margin-top: 1rem;
+    }
+    .form-row {
+      margin: 0.5rem 0;
+    }
+    input {
+      padding: 4px;
+      margin-left: 0.5rem;
+    }
+  `;
 
   constructor() {
     super();
@@ -68,11 +68,12 @@ class MedicationPanel extends LitElement {
 
   async _fetchMedications() {
     try {
-      // Assumes a WebSocket command "medical_assistant/get_schedule" is registered in the backend.
+      // Assumes that your backend registers a WebSocket command "medical_assistant/get_schedule"
+      // which returns an object with a "schedule" property.
       const response = await this.hass.callWS({ type: "medical_assistant/get_schedule" });
       this.medications = response.schedule || [];
-    } catch (err) {
-      console.error("Error fetching medications", err);
+    } catch (error) {
+      console.error("Failed to fetch medications", error);
       this.medications = [];
     }
   }
@@ -82,14 +83,13 @@ class MedicationPanel extends LitElement {
   }
 
   async _addMedication() {
-    // Call the Home Assistant service to add a medication.
     try {
       await this.hass.callService("medical_assistant", "add_medication", this.newMedication);
       this.newMedication = { day: '', time: '', name: '', strength: '' };
       this.showAddForm = false;
       this._fetchMedications();
-    } catch (err) {
-      console.error("Error adding medication", err);
+    } catch (error) {
+      console.error("Failed to add medication", error);
     }
   }
 
@@ -97,13 +97,13 @@ class MedicationPanel extends LitElement {
     try {
       await this.hass.callService("medical_assistant", "remove_medication", { index });
       this._fetchMedications();
-    } catch (err) {
-      console.error("Error removing medication", err);
+    } catch (error) {
+      console.error("Failed to remove medication", error);
     }
   }
 
   _editMedication(index) {
-    // Create a copy of the medication so the form can be edited.
+    // Create a shallow copy including the index so we can update later.
     this.editingMedication = { ...this.medications[index], index };
   }
 
@@ -112,8 +112,8 @@ class MedicationPanel extends LitElement {
       await this.hass.callService("medical_assistant", "update_medication", this.editingMedication);
       this.editingMedication = null;
       this._fetchMedications();
-    } catch (err) {
-      console.error("Error updating medication", err);
+    } catch (error) {
+      console.error("Failed to update medication", error);
     }
   }
 
@@ -196,25 +196,25 @@ class MedicationPanel extends LitElement {
         <h3>Edit Medication</h3>
         <div class="form-row">
           <label>Day:
-            <input type="text" .value="${this.editingMedication.day}" 
+            <input type="text" .value="${this.editingMedication.day}"
               @input="${e => this.editingMedication.day = e.target.value}">
           </label>
         </div>
         <div class="form-row">
           <label>Time:
-            <input type="text" .value="${this.editingMedication.time}" 
+            <input type="text" .value="${this.editingMedication.time}"
               @input="${e => this.editingMedication.time = e.target.value}">
           </label>
         </div>
         <div class="form-row">
           <label>Name:
-            <input type="text" .value="${this.editingMedication.name}" 
+            <input type="text" .value="${this.editingMedication.name}"
               @input="${e => this.editingMedication.name = e.target.value}">
           </label>
         </div>
         <div class="form-row">
           <label>Strength:
-            <input type="text" .value="${this.editingMedication.strength}" 
+            <input type="text" .value="${this.editingMedication.strength}"
               @input="${e => this.editingMedication.strength = e.target.value}">
           </label>
         </div>
