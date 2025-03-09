@@ -1,7 +1,7 @@
 {
   "domain": "medical_assistant",
   "name": "Medical Assistant",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "documentation": "https://github.com/Chuffnugget/medical_assistant",
   "issue_tracker": "https://github.com/Chuffnugget/medical_assistant/issues",
   "dependencies": [],
@@ -9,5 +9,12 @@
   "iot_class": "local_push",
   "config_flow": true,
   "supports_entry_removal": true,
-  "requirements": []
+  "requirements": [],
+  "panel_custom": {
+    "name": "medication-panel",
+    "sidebar_title": "Medications",
+    "sidebar_icon": "mdi:pill",
+    "module_url": "/local/medication-panel.js",
+    "embed_iframe": false
+  }
 }
