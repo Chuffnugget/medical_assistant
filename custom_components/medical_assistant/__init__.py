@@ -1,5 +1,7 @@
 """__init__.py - Medical Assistant Integration for Home Assistant."""
 import logging
+import os
+import shutil
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -9,12 +11,55 @@ from .const import DOMAIN, DAYS_OF_WEEK
 
 _LOGGER = logging.getLogger(__name__)
 
+def deploy_panel_file(hass: HomeAssistant) -> None:
+    """Deploy medication-panel.js to the Home Assistant www folder.
+    
+    This function checks if the source file (in the integration's local folder)
+    exists and compares its size to the file in config/www. If the destination
+    is missing or its size differs, the file is copied.
+    """
+    # Source file location: custom_components/medical_assistant/local/medication-panel.js
+    integration_dir = os.path.dirname(__file__)
+    src_path = os.path.join(integration_dir, "local", "medication-panel.js")
+    # Destination file location: config/www/medication-panel.js
+    dst_path = hass.config.path("www", "medication-panel.js")
+
+    if not os.path.exists(src_path):
+        _LOGGER.error("Source file not found at %s", src_path)
+        return
+
+    # If destination doesn't exist, copy the file.
+    if not os.path.exists(dst_path):
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+        shutil.copy(src_path, dst_path)
+        _LOGGER.info("Copied panel file to %s", dst_path)
+        return
+
+    # Compare file sizes (as a proxy for file changes)
+    try:
+        src_size = os.path.getsize(src_path)
+        dst_size = os.path.getsize(dst_path)
+    except Exception as e:
+        _LOGGER.error("Error getting file sizes: %s", e)
+        return
+
+    if src_size != dst_size:
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+        shutil.copy(src_path, dst_path)
+        _LOGGER.info("Updated panel file in %s due to size mismatch (src: %s bytes, dst: %s bytes)", dst_path, src_size, dst_size)
+    else:
+        _LOGGER.info("Panel file in %s is up-to-date", dst_path)
+
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up Medical Assistant via YAML (if any)."""
     hass.data.setdefault(DOMAIN, {})
     if "schedule" not in hass.data[DOMAIN]:
         # Global schedule as a list of medication records.
         hass.data[DOMAIN]["schedule"] = []
+    
+    # Use Home Assistant's executor to run the file deployment (to avoid blocking)
+    await hass.async_add_executor_job(deploy_panel_file, hass)
+    
     return True
 
 async def add_medication(call: ServiceCall):
