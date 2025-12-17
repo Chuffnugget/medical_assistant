@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Medical Assistant",
+        "description": "Set up the Medical Assistant integration.",
+        "data": {
+          "name": "Name"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Medical Assistant options",
+        "data": {
+          "countdown_update_seconds": "Countdown update interval (seconds)"
+        }
+      }
+    }
+  }
+}

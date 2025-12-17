@@ -1,168 +1,180 @@
-"""sensor.py - Sensor platform for Medical Assistant integration."""
-import logging
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from homeassistant.helpers.entity import Entity
+from typing import Any
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.components.select import SelectEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, DAYS_OF_WEEK
+from .const import DOMAIN, SIGNAL_DATA_UPDATED
+from . import Runtime
 
-_LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up sensor entities for Medical Assistant."""
-    entities = [
-        NextMedicationSensor(hass),
-        MedicationInputSelect(hass)
-    ]
-    async_add_entities(entities, update_before_add=True)
+@dataclass(slots=True)
+class NextDose:
+    when: datetime | None
+    med: dict[str, Any] | None
 
-def get_next_occurrence(day: str, time_str: str):
-    """
-    Compute the next occurrence datetime for a given day (e.g. "Monday")
-    and a time string in HH:MM:SS format.
-    """
-    now = datetime.now()
-    try:
-        day_index = DAYS_OF_WEEK.index(day)
-    except ValueError:
-        _LOGGER.error("Invalid day provided: %s", day)
-        return None
-    today_index = DAYS_OF_WEEK.index(now.strftime("%A"))
-    days_ahead = (day_index - today_index) % 7
-    med_time = datetime.strptime(time_str, "%H:%M:%S").time()
-    candidate = datetime.combine(now.date() + timedelta(days=days_ahead), med_time)
-    # If the candidate time is earlier than now (for today), schedule for next week.
-    if candidate <= now:
-        candidate += timedelta(days=7)
-    return candidate
 
-class NextMedicationSensor(Entity):
-    """Sensor that shows the overall next medication (across all days)."""
-    def __init__(self, hass):
-        self._hass = hass
-        self._state = "No medication scheduled"
-        self._unsubscribe_dispatcher = None
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    runtime: Runtime = hass.data[DOMAIN][entry.entry_id]
 
-    @property
-    def name(self):
-        return "Medical Assistant Next Medication"
+    async_add_entities(
+        [
+            NextMedNameSensor(hass, entry, runtime),
+            NextMedStrengthSensor(hass, entry, runtime),
+            NextMedTimeSensor(hass, entry, runtime),
+            NextMedCountdownSensor(hass, entry, runtime),
+        ],
+        update_before_add=True,
+    )
+
+
+class _BaseMedicalAssistantEntity(Entity):
+    _attr_has_entity_name = True
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, runtime: Runtime) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.runtime = runtime
+        self._unsub: callable | None = None
 
     @property
-    def unique_id(self):
-        return "medical_assistant_next_medication"
-
-    @property
-    def state(self):
-        return self._state
-
-    def _compute_next_medication(self):
-        now = datetime.now()
-        schedule = self._hass.data[DOMAIN]["schedule"]
-        upcoming = []
-        for med in schedule:
-            med_dt = get_next_occurrence(med["day"], med["time"])
-            if med_dt and med_dt > now:
-                upcoming.append((med_dt, med))
-        if upcoming:
-            upcoming.sort(key=lambda x: x[0])
-            next_dt, next_med = upcoming[0]
-            delta = next_dt - now
-            seconds = delta.total_seconds()
-            if seconds < 12 * 3600:
-                minutes = int(seconds // 60)
-                hours = int(seconds // 3600)
-                rel_time = (f"{hours} hour{'s' if hours != 1 else ''}"
-                            if hours > 0 else f"{minutes} minute{'s' if minutes != 1 else ''}")
-                return f"{rel_time} until {next_med.get('name')} ({next_med.get('strength')})"
-            else:
-                time_str = next_dt.strftime("%a %H:%M")
-                return f"{next_med['day']} {time_str} - {next_med.get('name')} ({next_med.get('strength')})"
-        return "No medication scheduled"
-
-    async def async_update(self):
-        self._state = self._compute_next_medication()
-
-    async def async_added_to_hass(self):
-        self._unsubscribe_dispatcher = async_dispatcher_connect(
-            self._hass, f"{DOMAIN}_update", self._handle_update
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.entry.entry_id)},
+            name=self.entry.title,
+            manufacturer="Chuffnugget",
+            model="Medical Assistant",
         )
 
-    async def async_will_remove_from_hass(self):
-        if self._unsubscribe_dispatcher:
-            self._unsubscribe_dispatcher()
-            self._unsubscribe_dispatcher = None
-
-    def _handle_update(self):
-        self.schedule_update_ha_state(True)
-
-class MedicationInputSelect(SelectEntity):
-    """
-    Select entity that displays all medication records in the global schedule.
-    Each option is a text string formatted as:
-      "<YYYY-MM-DD HH:MM:SS> - <Medication Name> (<strength>)"
-    ordered by the medication’s next occurrence.
-    If there are no medication records, the select will display a single option: "Empty".
-    """
-    def __init__(self, hass):
-        self._hass = hass
-        self._options = []
-        self._current_option = None
-        self._unsubscribe_dispatcher = None
-        self._update_options()
-
-    @property
-    def name(self):
-        return "Medication Schedule Input"
-
-    @property
-    def unique_id(self):
-        return "medical_assistant_medication_input_select"
-
-    @property
-    def options(self):
-        return self._options
-
-    @property
-    def current_option(self):
-        return self._current_option
-
-    def _update_options(self):
-        now = datetime.now()
-        schedule = self._hass.data[DOMAIN]["schedule"]
-        option_list = []
-        for med in schedule:
-            med_dt = get_next_occurrence(med["day"], med["time"])
-            if med_dt:
-                option_str = f"{med_dt.strftime('%Y-%m-%d %H:%M:%S')} - {med['name']} ({med.get('strength')})"
-                option_list.append((med_dt, option_str))
-        # Order options by upcoming time.
-        option_list.sort(key=lambda x: x[0])
-        if option_list:
-            self._options = [option for _, option in option_list]
-            self._current_option = self._options[0]
-        else:
-            self._options = ["Empty"]
-            self._current_option = "Empty"
-
-    async def async_update(self):
-        self._update_options()
-
-    async def async_added_to_hass(self):
-        self._unsubscribe_dispatcher = async_dispatcher_connect(
-            self._hass, f"{DOMAIN}_update", self._handle_update
+    async def async_added_to_hass(self) -> None:
+        self._unsub = async_dispatcher_connect(
+            self.hass, SIGNAL_DATA_UPDATED, self._handle_update_signal
         )
 
-    async def async_will_remove_from_hass(self):
-        if self._unsubscribe_dispatcher:
-            self._unsubscribe_dispatcher()
-            self._unsubscribe_dispatcher = None
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
 
-    def _handle_update(self):
-        self._update_options()
-        self.schedule_update_ha_state(True)
+    @callback
+    def _handle_update_signal(self, entry_id: str) -> None:
+        if entry_id != self.entry.entry_id:
+            return
+        self.async_schedule_update_ha_state(True)
 
-    async def async_select_option(self, option: str) -> None:
-        if option in self._options:
-            self._current_option = option
-            self.schedule_update_ha_state()
+    def _compute_next(self) -> NextDose:
+        meds = [m for m in self.runtime.store.list_meds() if m.get("enabled", True)]
+        if not meds:
+            return NextDose(when=None, med=None)
+
+        now = dt_util.now()
+        tz = dt_util.DEFAULT_TIME_ZONE
+
+        best_when: datetime | None = None
+        best_med: dict[str, Any] | None = None
+
+        for med in meds:
+            time_local = str(med.get("time_local", "00:00"))
+            try:
+                hh, mm = time_local.split(":")
+                hour = int(hh)
+                minute = int(mm)
+            except Exception:
+                continue
+
+            days = med.get("days_of_week", [])
+            if not isinstance(days, list) or not days:
+                continue
+
+            # Search up to 7 days ahead for the next matching weekday/time
+            for offset in range(0, 8):
+                day = (now + timedelta(days=offset)).date()
+                candidate = datetime(day.year, day.month, day.day, hour, minute, tzinfo=tz)
+
+                if candidate.weekday() not in days:
+                    continue
+                if candidate <= now:
+                    continue
+
+                if best_when is None or candidate < best_when:
+                    best_when = candidate
+                    best_med = med
+                break
+
+        return NextDose(when=best_when, med=best_med)
+
+
+class NextMedNameSensor(_BaseMedicalAssistantEntity):
+    _attr_name = "Next medicine"
+    _attr_unique_id = "next_medicine_name"
+
+    @property
+    def state(self) -> str | None:
+        nxt = self._compute_next()
+        return (nxt.med or {}).get("name")
+
+
+class NextMedStrengthSensor(_BaseMedicalAssistantEntity):
+    _attr_name = "Next medicine strength"
+    _attr_unique_id = "next_medicine_strength"
+
+    @property
+    def state(self) -> str | None:
+        nxt = self._compute_next()
+        return (nxt.med or {}).get("strength")
+
+
+class NextMedTimeSensor(_BaseMedicalAssistantEntity):
+    _attr_name = "Next medicine time"
+    _attr_unique_id = "next_medicine_time"
+
+    @property
+    def state(self) -> str | None:
+        nxt = self._compute_next()
+        if not nxt.when:
+            return None
+        # ISO timestamp string
+        return nxt.when.isoformat()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        nxt = self._compute_next()
+        return {"id": (nxt.med or {}).get("id")}
+
+
+class NextMedCountdownSensor(_BaseMedicalAssistantEntity):
+    _attr_name = "Next medicine countdown"
+    _attr_unique_id = "next_medicine_countdown"
+    _attr_native_unit_of_measurement = "s"
+
+    @property
+    def state(self) -> int | None:
+        nxt = self._compute_next()
+        if not nxt.when:
+            return None
+        now = dt_util.now()
+        seconds = int((nxt.when - now).total_seconds())
+        return max(seconds, 0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        nxt = self._compute_next()
+        return {
+            "id": (nxt.med or {}).get("id"),
+            "name": (nxt.med or {}).get("name"),
+            "strength": (nxt.med or {}).get("strength"),
+            "time_local": (nxt.med or {}).get("time_local"),
+            "days_of_week": (nxt.med or {}).get("days_of_week"),
+        }
