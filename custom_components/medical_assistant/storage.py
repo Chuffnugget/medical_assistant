@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -17,9 +17,12 @@ class MedicalAssistantStore:
     version: int
     key: str
 
+    # Must be declared because slots=True prevents dynamic attributes
+    _store: Store = field(init=False)
+    data: dict[str, Any] = field(default_factory=_default_data)
+
     def __post_init__(self) -> None:
         self._store = Store(self.hass, self.version, self.key)
-        self.data: dict[str, Any] = _default_data()
 
     async def async_load(self) -> None:
         loaded = await self._store.async_load()
