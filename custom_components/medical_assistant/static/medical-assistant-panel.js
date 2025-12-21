@@ -32,10 +32,13 @@ class MedicalAssistantPanel extends HTMLElement {
         th, td { padding: 10px 12px; border-bottom: 1px solid var(--divider-color); text-align:left; vertical-align: top; }
         th { font-weight: 600; }
         tr:last-child td { border-bottom: none; }
-        input[type="text"], input[type="time"] { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 10px; border: 1px solid var(--divider-color); background: transparent; color: var(--primary-text-color); }
+        input[type="text"], input[type="time"], select {
+          width: 100%; box-sizing: border-box; padding: 8px; border-radius: 10px;
+          border: 1px solid var(--divider-color); background: transparent; color: var(--primary-text-color);
+        }
         .row-actions { display:flex; gap:8px; }
-        .pill { display:inline-block; padding:2px 8px; border:1px solid var(--divider-color); border-radius:999px; margin:2px 4px 2px 0; font-size: 12px; opacity: 0.9; }
-        dialog { border:none; border-radius:16px; padding:0; width:min(720px, 96vw); background: var(--card-background-color); color: var(--primary-text-color); }
+        .pill { display:inline-block; padding:2px 8px; border:1px solid var(--divider-color); border-radius:999px; margin:2px 6px 2px 0; font-size: 12px; opacity: 0.9; }
+        dialog { border:none; border-radius:16px; padding:0; width:min(760px, 96vw); background: var(--card-background-color); color: var(--primary-text-color); }
         .dlg { padding: 16px; }
         .dlg h3 { margin: 0 0 12px; }
         .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -58,11 +61,12 @@ class MedicalAssistantPanel extends HTMLElement {
         <table>
           <thead>
             <tr>
-              <th style="width: 18%;">Time</th>
-              <th style="width: 22%;">Name</th>
-              <th style="width: 18%;">Strength</th>
-              <th style="width: 28%;">Days</th>
-              <th style="width: 14%;">Actions</th>
+              <th style="width: 16%;">Time</th>
+              <th style="width: 20%;">Name</th>
+              <th style="width: 16%;">Strength</th>
+              <th style="width: 24%;">Days</th>
+              <th style="width: 14%;">Person</th>
+              <th style="width: 10%;">Actions</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -83,6 +87,7 @@ class MedicalAssistantPanel extends HTMLElement {
               <div>Enabled</div>
               <label class="day"><input id="f_enabled" type="checkbox" /> Enabled</label>
             </div>
+
             <div>
               <div>Name</div>
               <input id="f_name" type="text" placeholder="e.g. Paracetamol" />
@@ -91,10 +96,17 @@ class MedicalAssistantPanel extends HTMLElement {
               <div>Strength</div>
               <input id="f_strength" type="text" placeholder="e.g. 500 mg" />
             </div>
+
+            <div class="full">
+              <div>Person (optional)</div>
+              <select id="f_person"></select>
+            </div>
+
             <div class="full">
               <div>Days of week</div>
               <div class="days" id="f_days"></div>
             </div>
+
             <div class="full">
               <div>Notes</div>
               <input id="f_notes" type="text" placeholder="optional" />
@@ -114,6 +126,7 @@ class MedicalAssistantPanel extends HTMLElement {
     this.shadowRoot.getElementById("save").addEventListener("click", () => this._saveDialog());
 
     this._buildDaysUI();
+    await this._loadPeople();
     await this._load();
   }
 
@@ -134,7 +147,32 @@ class MedicalAssistantPanel extends HTMLElement {
     return await this._hass.connection.sendMessagePromise(msg);
   }
 
+  async _loadPeople() {
+    const res = await this._ws({ type: "medical_assistant/list_people" });
+    this._people = res.people || [];
+    this._peopleMap = new Map(this._people.map((p) => [p.entity_id, p.name]));
+
+    const sel = this.shadowRoot.getElementById("f_person");
+    sel.innerHTML = "";
+
+    // Unassigned option
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "Unassigned";
+    sel.appendChild(opt0);
+
+    this._people.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.entity_id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+  }
+
   async _load() {
+    // refresh people too (in case new person added)
+    await this._loadPeople();
+
     const res = await this._ws({ type: "medical_assistant/list_meds" });
     this._meds = res.meds || [];
     this._renderRows();
@@ -150,12 +188,15 @@ class MedicalAssistantPanel extends HTMLElement {
       const tr = document.createElement("tr");
 
       const days = (m.days_of_week || []).map((d) => `<span class="pill">${dayName(d)}</span>`).join(" ");
+      const personName = (m.person_entity_id && this._peopleMap?.get(m.person_entity_id)) || "";
+      const personCell = personName ? `<span class="pill">${this._escape(personName)}</span>` : `<span style="opacity:0.6;">—</span>`;
 
       tr.innerHTML = `
         <td>${this._escape(m.time_local || "")}</td>
         <td>${this._escape(m.name || "")}</td>
         <td>${this._escape(m.strength || "")}</td>
         <td>${days}</td>
+        <td>${personCell}</td>
         <td>
           <div class="row-actions">
             <button data-act="edit">Edit</button>
@@ -172,7 +213,7 @@ class MedicalAssistantPanel extends HTMLElement {
 
     if (this._meds.length === 0) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="5" style="opacity:0.8;">No medications yet. Click “Add medication”.</td>`;
+      tr.innerHTML = `<td colspan="6" style="opacity:0.8;">No medications yet. Click “Add medication”.</td>`;
       rows.appendChild(tr);
     }
   }
@@ -191,9 +232,12 @@ class MedicalAssistantPanel extends HTMLElement {
     setVal("f_strength", med?.strength ?? "");
     setVal("f_notes", med?.notes ?? "");
 
+    // person selection
+    const personSel = this.shadowRoot.getElementById("f_person");
+    personSel.value = med?.person_entity_id ?? "";
+
     this.shadowRoot.getElementById("f_enabled").checked = med ? !!med.enabled : true;
 
-    // days
     const days = new Set(med?.days_of_week ?? [0,1,2,3,4,5,6]);
     this.shadowRoot.querySelectorAll("#f_days input[type=checkbox]").forEach((cb) => {
       cb.checked = days.has(Number(cb.dataset.day));
@@ -214,6 +258,9 @@ class MedicalAssistantPanel extends HTMLElement {
     const notes = this.shadowRoot.getElementById("f_notes").value.trim();
     const enabled = this.shadowRoot.getElementById("f_enabled").checked;
 
+    const person_entity_id_raw = this.shadowRoot.getElementById("f_person").value;
+    const person_entity_id = person_entity_id_raw && person_entity_id_raw.trim() ? person_entity_id_raw.trim() : null;
+
     const days_of_week = Array.from(this.shadowRoot.querySelectorAll("#f_days input[type=checkbox]"))
       .filter((cb) => cb.checked)
       .map((cb) => Number(cb.dataset.day));
@@ -232,6 +279,7 @@ class MedicalAssistantPanel extends HTMLElement {
         notes,
         enabled,
         days_of_week,
+        person_entity_id,
       });
     } else {
       await this._ws({
@@ -243,6 +291,7 @@ class MedicalAssistantPanel extends HTMLElement {
         notes,
         enabled,
         days_of_week,
+        person_entity_id,
       });
     }
 
