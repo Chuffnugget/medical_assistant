@@ -10,25 +10,34 @@ from homeassistant.components import websocket_api
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DOMAIN, SIGNAL_DATA_UPDATED
-from . import Runtime
 
 
-_WS_REGISTERED = f"{DOMAIN}_ws_registered"
+_WS_REG_KEY = "ws_registered"
 
 
-def _get_store(hass: HomeAssistant) -> Runtime:
-    # We store per-entry, but websocket handlers are global.
-    # We'll just pick the first entry for now (single-entry integration).
+def _get_any_runtime(hass: HomeAssistant) -> Any:
+    """Return the first runtime object we stored in hass.data[DOMAIN][entry_id]."""
     domain_data = hass.data.get(DOMAIN, {})
-    for k, v in domain_data.items():
-        if k == "_runtime_global":
+    for key, val in domain_data.items():
+        # Skip internal dicts/flags
+        if key in ("_reg",):
             continue
-        return v
-    raise RuntimeError("Medical Assistant is not set up")
+        # Runtime is whatever you stored in hass.data[DOMAIN][entry.entry_id]
+        # and must have a .store attribute.
+        if hasattr(val, "store"):
+            return val
+    raise RuntimeError("Medical Assistant is not set up (no runtime found)")
+
+
+def _all_entry_ids(hass: HomeAssistant) -> list[str]:
+    domain_data = hass.data.get(DOMAIN, {})
+    return [k for k in domain_data.keys() if k not in ("_reg",)]
 
 
 def async_register_ws(hass: HomeAssistant) -> None:
-    if hass.data[DOMAIN].setdefault("_runtime_global", {}).get(_WS_REGISTERED):
+    """Register WS commands once."""
+    reg = hass.data.setdefault(DOMAIN, {}).setdefault("_reg", {})
+    if reg.get(_WS_REG_KEY):
         return
 
     websocket_api.async_register_command(hass, ws_list_meds)
@@ -36,14 +45,18 @@ def async_register_ws(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_update_med)
     websocket_api.async_register_command(hass, ws_delete_med)
 
-    hass.data[DOMAIN]["_runtime_global"][_WS_REGISTERED] = True
+    reg[_WS_REG_KEY] = True
 
 
 @websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/list_meds"})
 @callback
-def ws_list_meds(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
-    runtime = _get_store(hass)
+def ws_list_meds(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    runtime = _get_any_runtime(hass)
     connection.send_result(msg["id"], {"meds": runtime.store.list_meds()})
 
 
@@ -63,8 +76,12 @@ _CREATE_SCHEMA = vol.Schema(
 @websocket_api.require_admin
 @websocket_api.async_response
 @websocket_api.websocket_command(_CREATE_SCHEMA)
-async def ws_create_med(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
-    runtime = _get_store(hass)
+async def ws_create_med(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    runtime = _get_any_runtime(hass)
     meds = runtime.store.list_meds()
 
     med = {
@@ -77,9 +94,9 @@ async def ws_create_med(hass: HomeAssistant, connection: websocket_api.ActiveCon
         "notes": msg.get("notes", ""),
     }
     meds.append(med)
+
     await runtime.store.set_meds(meds)
 
-    # Notify entities/UI
     for entry_id in _all_entry_ids(hass):
         async_dispatcher_send(hass, SIGNAL_DATA_UPDATED, entry_id)
 
@@ -103,12 +120,17 @@ _UPDATE_SCHEMA = vol.Schema(
 @websocket_api.require_admin
 @websocket_api.async_response
 @websocket_api.websocket_command(_UPDATE_SCHEMA)
-async def ws_update_med(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
-    runtime = _get_store(hass)
+async def ws_update_med(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    runtime = _get_any_runtime(hass)
     meds = runtime.store.list_meds()
 
     med_id = msg["id"]
     updated: dict[str, Any] | None = None
+
     for med in meds:
         if med.get("id") == med_id:
             for key in ("name", "strength", "time_local", "days_of_week", "enabled", "notes"):
@@ -140,8 +162,12 @@ _DELETE_SCHEMA = vol.Schema(
 @websocket_api.require_admin
 @websocket_api.async_response
 @websocket_api.websocket_command(_DELETE_SCHEMA)
-async def ws_delete_med(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
-    runtime = _get_store(hass)
+async def ws_delete_med(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    runtime = _get_any_runtime(hass)
     meds = runtime.store.list_meds()
 
     med_id = msg["id"]
@@ -157,8 +183,3 @@ async def ws_delete_med(hass: HomeAssistant, connection: websocket_api.ActiveCon
         async_dispatcher_send(hass, SIGNAL_DATA_UPDATED, entry_id)
 
     connection.send_result(msg["id"], {"ok": True})
-
-
-def _all_entry_ids(hass: HomeAssistant) -> list[str]:
-    domain_data = hass.data.get(DOMAIN, {})
-    return [k for k in domain_data.keys() if k != "_runtime_global"]
