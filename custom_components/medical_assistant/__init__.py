@@ -25,7 +25,6 @@ from .const import (
     STATIC_URL_BASE,
 )
 from .storage import MedicalAssistantStore
-from .websocket_api import async_register_ws
 
 
 @dataclass(slots=True)
@@ -35,24 +34,20 @@ class Runtime:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the integration (YAML not used, but required entrypoint)."""
     hass.data.setdefault(DOMAIN, {})
     return True
 
 
 async def _ensure_panel_and_static(hass: HomeAssistant) -> None:
-    """Register static JS path + sidebar panel once."""
     reg = hass.data[DOMAIN].setdefault("_reg", {})
     if reg.get("panel_registered"):
         return
 
-    # Serve /api/medical_assistant/static/* from <integration>/static/*
     static_dir = Path(__file__).parent / "static"
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL_BASE, str(static_dir), cache_headers=False)]
     )
 
-    # Register the sidebar panel (admin-only)
     async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -74,22 +69,21 @@ async def _ensure_panel_and_static(hass: HomeAssistant) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Medical Assistant from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
     await _ensure_panel_and_static(hass)
 
-    # Storage
     store = MedicalAssistantStore(hass, STORAGE_VERSION, STORAGE_KEY)
     await store.async_load()
-
-    # WebSocket CRUD
-    async_register_ws(hass)
 
     runtime = Runtime(store=store)
     hass.data[DOMAIN][entry.entry_id] = runtime
 
-    # Periodic tick so countdown sensors update
+    # Import/register WS here to avoid config_flow import failures
+    from .websocket_api import async_register_ws  # noqa: WPS433
+
+    async_register_ws(hass)
+
     async def _tick(_: object) -> None:
         async_dispatcher_send(hass, SIGNAL_DATA_UPDATED, entry.entry_id)
 
@@ -100,7 +94,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
     runtime: Runtime = hass.data[DOMAIN].pop(entry.entry_id)
 
     if runtime.unsub_interval:
@@ -109,8 +102,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    # If last entry removed, remove the panel
     if ok:
+        # If last entry removed, remove the panel
         still_entries = any(k for k in hass.data[DOMAIN].keys() if k not in ("_reg",))
         if not still_entries:
             async_remove_panel(hass, PANEL_URL_PATH)
