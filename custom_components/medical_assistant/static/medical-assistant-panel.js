@@ -26,25 +26,80 @@ class MedicalAssistantPanel extends HTMLElement {
         .wrap { max-width: 1100px; margin: 0 auto; }
         .toolbar { display:flex; gap:12px; align-items:center; justify-content: space-between; margin-bottom: 12px; }
         .title { font-size: 20px; font-weight: 600; }
-        button { cursor:pointer; padding:8px 12px; border-radius:10px; border:1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); }
+
+        button {
+          cursor:pointer;
+          padding:8px 12px;
+          border-radius:10px;
+          border:1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+        }
         button.danger { border-color: var(--error-color); }
-        table { width:100%; border-collapse: collapse; background: var(--card-background-color); border-radius: 14px; overflow:hidden; }
-        th, td { padding: 10px 12px; border-bottom: 1px solid var(--divider-color); text-align:left; vertical-align: top; }
+        button[disabled] { opacity: 0.6; cursor: not-allowed; }
+
+        table {
+          width:100%;
+          border-collapse: collapse;
+          background: var(--card-background-color);
+          border-radius: 14px;
+          overflow:hidden;
+        }
+        th, td {
+          padding: 10px 12px;
+          border-bottom: 1px solid var(--divider-color);
+          text-align:left;
+          vertical-align: top;
+        }
         th { font-weight: 600; }
         tr:last-child td { border-bottom: none; }
+
         input[type="text"], input[type="time"], select {
-          width: 100%; box-sizing: border-box; padding: 8px; border-radius: 10px;
-          border: 1px solid var(--divider-color); background: transparent; color: var(--primary-text-color);
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px;
+          border-radius: 10px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
         }
+        option {
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+        }
+
         .row-actions { display:flex; gap:8px; }
-        .pill { display:inline-block; padding:2px 8px; border:1px solid var(--divider-color); border-radius:999px; margin:2px 6px 2px 0; font-size: 12px; opacity: 0.9; }
-        dialog { border:none; border-radius:16px; padding:0; width:min(760px, 96vw); background: var(--card-background-color); color: var(--primary-text-color); }
+        .pill {
+          display:inline-block;
+          padding:2px 8px;
+          border:1px solid var(--divider-color);
+          border-radius:999px;
+          margin:2px 6px 2px 0;
+          font-size: 12px;
+          opacity: 0.9;
+        }
+
+        dialog {
+          border:none;
+          border-radius:16px;
+          padding:0;
+          width:min(760px, 96vw);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+        }
         .dlg { padding: 16px; }
         .dlg h3 { margin: 0 0 12px; }
         .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .grid .full { grid-column: 1 / -1; }
         .days { display:flex; flex-wrap: wrap; gap: 8px; }
-        label.day { display:flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--divider-color); border-radius:999px; }
+        label.day {
+          display:flex;
+          gap:6px;
+          align-items:center;
+          padding:6px 10px;
+          border:1px solid var(--divider-color);
+          border-radius:999px;
+        }
         .dlg-actions { display:flex; justify-content:flex-end; gap: 10px; padding: 0 16px 16px; }
         .hint { opacity: 0.8; font-size: 12px; margin-top: 6px; }
       </style>
@@ -93,8 +148,8 @@ class MedicalAssistantPanel extends HTMLElement {
               <input id="f_name" type="text" placeholder="e.g. Paracetamol" />
             </div>
             <div>
-              <div>Strength</div>
-              <input id="f_strength" type="text" placeholder="e.g. 500 mg" />
+              <div>Strength (optional)</div>
+              <input id="f_strength" type="text" placeholder="e.g. 500 mg (or leave blank)" />
             </div>
 
             <div class="full">
@@ -155,7 +210,6 @@ class MedicalAssistantPanel extends HTMLElement {
     const sel = this.shadowRoot.getElementById("f_person");
     sel.innerHTML = "";
 
-    // Unassigned option
     const opt0 = document.createElement("option");
     opt0.value = "";
     opt0.textContent = "Unassigned";
@@ -170,9 +224,7 @@ class MedicalAssistantPanel extends HTMLElement {
   }
 
   async _load() {
-    // refresh people too (in case new person added)
     await this._loadPeople();
-
     const res = await this._ws({ type: "medical_assistant/list_meds" });
     this._meds = res.meds || [];
     this._renderRows();
@@ -190,11 +242,12 @@ class MedicalAssistantPanel extends HTMLElement {
       const days = (m.days_of_week || []).map((d) => `<span class="pill">${dayName(d)}</span>`).join(" ");
       const personName = (m.person_entity_id && this._peopleMap?.get(m.person_entity_id)) || "";
       const personCell = personName ? `<span class="pill">${this._escape(personName)}</span>` : `<span style="opacity:0.6;">—</span>`;
+      const strengthText = (m.strength && String(m.strength).trim()) ? this._escape(m.strength) : `<span style="opacity:0.6;">—</span>`;
 
       tr.innerHTML = `
         <td>${this._escape(m.time_local || "")}</td>
         <td>${this._escape(m.name || "")}</td>
-        <td>${this._escape(m.strength || "")}</td>
+        <td>${strengthText}</td>
         <td>${days}</td>
         <td>${personCell}</td>
         <td>
@@ -232,7 +285,6 @@ class MedicalAssistantPanel extends HTMLElement {
     setVal("f_strength", med?.strength ?? "");
     setVal("f_notes", med?.notes ?? "");
 
-    // person selection
     const personSel = this.shadowRoot.getElementById("f_person");
     personSel.value = med?.person_entity_id ?? "";
 
@@ -252,57 +304,74 @@ class MedicalAssistantPanel extends HTMLElement {
   }
 
   async _saveDialog() {
-    const time_local = this.shadowRoot.getElementById("f_time").value;
-    const name = this.shadowRoot.getElementById("f_name").value.trim();
-    const strength = this.shadowRoot.getElementById("f_strength").value.trim();
-    const notes = this.shadowRoot.getElementById("f_notes").value.trim();
-    const enabled = this.shadowRoot.getElementById("f_enabled").checked;
+    const saveBtn = this.shadowRoot.getElementById("save");
+    saveBtn.disabled = true;
 
-    const person_entity_id_raw = this.shadowRoot.getElementById("f_person").value;
-    const person_entity_id = person_entity_id_raw && person_entity_id_raw.trim() ? person_entity_id_raw.trim() : null;
+    try {
+      const time_local = this.shadowRoot.getElementById("f_time").value;
+      const name = this.shadowRoot.getElementById("f_name").value.trim();
+      const strengthRaw = this.shadowRoot.getElementById("f_strength").value;
+      const strength = strengthRaw && strengthRaw.trim() ? strengthRaw.trim() : null; // optional
+      const notes = this.shadowRoot.getElementById("f_notes").value.trim();
+      const enabled = this.shadowRoot.getElementById("f_enabled").checked;
 
-    const days_of_week = Array.from(this.shadowRoot.querySelectorAll("#f_days input[type=checkbox]"))
-      .filter((cb) => cb.checked)
-      .map((cb) => Number(cb.dataset.day));
+      const person_entity_id_raw = this.shadowRoot.getElementById("f_person").value;
+      const person_entity_id = person_entity_id_raw && person_entity_id_raw.trim() ? person_entity_id_raw.trim() : null;
 
-    if (!time_local || !name || !strength || days_of_week.length === 0) {
-      alert("Time, name, strength, and at least one day are required.");
-      return;
+      const days_of_week = Array.from(this.shadowRoot.querySelectorAll("#f_days input[type=checkbox]"))
+        .filter((cb) => cb.checked)
+        .map((cb) => Number(cb.dataset.day));
+
+      // Strength is NOT required anymore
+      if (!time_local || !name || days_of_week.length === 0) {
+        alert("Time, name, and at least one day are required.");
+        return;
+      }
+
+      if (this._dlgMode === "create") {
+        await this._ws({
+          type: "medical_assistant/create_med",
+          time_local,
+          name,
+          strength,
+          notes,
+          enabled,
+          days_of_week,
+          person_entity_id,
+        });
+      } else {
+        await this._ws({
+          type: "medical_assistant/update_med",
+          id: this._dlgMed.id,
+          time_local,
+          name,
+          strength,
+          notes,
+          enabled,
+          days_of_week,
+          person_entity_id,
+        });
+      }
+
+      this._closeDialog();
+      await this._load();
+    } catch (err) {
+      console.error("Save failed:", err);
+      alert(`Save failed: ${err?.message ?? err}`);
+    } finally {
+      saveBtn.disabled = false;
     }
-
-    if (this._dlgMode === "create") {
-      await this._ws({
-        type: "medical_assistant/create_med",
-        time_local,
-        name,
-        strength,
-        notes,
-        enabled,
-        days_of_week,
-        person_entity_id,
-      });
-    } else {
-      await this._ws({
-        type: "medical_assistant/update_med",
-        id: this._dlgMed.id,
-        time_local,
-        name,
-        strength,
-        notes,
-        enabled,
-        days_of_week,
-        person_entity_id,
-      });
-    }
-
-    this._closeDialog();
-    await this._load();
   }
 
   async _delete(id) {
-    if (!confirm("Delete this medication?")) return;
-    await this._ws({ type: "medical_assistant/delete_med", id });
-    await this._load();
+    try {
+      if (!confirm("Delete this medication?")) return;
+      await this._ws({ type: "medical_assistant/delete_med", id });
+      await this._load();
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert(`Delete failed: ${err?.message ?? err}`);
+    }
   }
 
   _escape(s) {

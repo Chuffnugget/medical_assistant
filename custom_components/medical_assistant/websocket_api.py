@@ -37,22 +37,30 @@ def _normalize_person_id(value: Any) -> str | None:
     return v or None
 
 
+def _normalize_strength(value: Any) -> str | None:
+    """Allow empty/None strength. Normalize to None for storage."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v or None
+
+
 def _list_people(hass: HomeAssistant) -> list[dict[str, str]]:
-    """Return person entities from the entity registry (more reliable than states)."""
+    """Return person entities from the entity registry."""
     ent_reg = er.async_get(hass)
 
     people: list[dict[str, str]] = []
     for entry in ent_reg.entities.values():
         if entry.domain != "person":
             continue
-        # Prefer the entity registry name; fall back to state friendly_name/name
         name = entry.name
         st = hass.states.get(entry.entity_id)
         if not name and st is not None:
             name = st.attributes.get("friendly_name") or st.name
         if not name:
             name = entry.entity_id
-
         people.append({"entity_id": entry.entity_id, "name": str(name)})
 
     people.sort(key=lambda p: p["name"].lower())
@@ -94,7 +102,8 @@ def ws_list_meds(hass: HomeAssistant, connection: websocket_api.ActiveConnection
     {
         vol.Required("type"): f"{DOMAIN}/create_med",
         vol.Required("name"): str,
-        vol.Required("strength"): str,
+        # strength is OPTIONAL now
+        vol.Optional("strength", default=""): str,
         vol.Required("time_local"): str,
         vol.Required("days_of_week"): [vol.All(int, vol.Range(min=0, max=6))],
         vol.Optional("enabled", default=True): bool,
@@ -111,10 +120,13 @@ async def ws_create_med(hass: HomeAssistant, connection: websocket_api.ActiveCon
         connection.send_error(msg["id"], "invalid_person", "person_entity_id must be a person.* entity_id")
         return
 
+    # optional strength -> normalize to None if blank
+    strength = _normalize_strength(msg.get("strength"))
+
     med = {
         "id": uuid.uuid4().hex[:8],
-        "name": msg["name"],
-        "strength": msg["strength"],
+        "name": msg["name"].strip(),
+        "strength": strength,  # None or string
         "time_local": msg["time_local"],
         "days_of_week": msg["days_of_week"],
         "enabled": msg.get("enabled", True),
@@ -138,7 +150,8 @@ async def ws_create_med(hass: HomeAssistant, connection: websocket_api.ActiveCon
         vol.Required("type"): f"{DOMAIN}/update_med",
         vol.Required("id"): str,
         vol.Optional("name"): str,
-        vol.Optional("strength"): str,
+        # strength remains OPTIONAL on update
+        vol.Optional("strength"): vol.Any(None, str),
         vol.Optional("time_local"): str,
         vol.Optional("days_of_week"): [vol.All(int, vol.Range(min=0, max=6))],
         vol.Optional("enabled"): bool,
@@ -163,7 +176,11 @@ async def ws_update_med(hass: HomeAssistant, connection: websocket_api.ActiveCon
 
     for med in meds:
         if med.get("id") == med_id:
-            for key in ("name", "strength", "time_local", "days_of_week", "enabled", "notes"):
+            if "name" in msg:
+                med["name"] = msg["name"].strip()
+            if "strength" in msg:
+                med["strength"] = _normalize_strength(msg.get("strength"))
+            for key in ("time_local", "days_of_week", "enabled", "notes"):
                 if key in msg:
                     med[key] = msg[key]
             if "person_entity_id" in msg:
